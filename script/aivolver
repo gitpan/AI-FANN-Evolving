@@ -1,0 +1,60 @@
+#!/usr/bin/perl
+use strict;
+use warnings;
+use Pod::Usage;
+use Getopt::Long;
+use YAML::Any 'LoadFile';
+use AI::FANN::Evolving;
+use AI::FANN::Evolving::TrainData;
+use Algorithm::Genetic::Diploid::Logger ':levels';
+
+# initialize config variables
+my $verbosity = WARN; # log level
+my %initialize;       # settings to start the population
+my %data;             # train and test data files
+my %experiment;       # experiment settings
+my $outfile;
+
+# first argument is a config file
+if ( -e $ARGV[0] ) {
+	my $conf = shift;
+	my $yaml = LoadFile($conf);
+	$outfile    = $yaml->{'outfile'}         if defined $yaml->{'outfile'};
+	$verbosity  = $yaml->{'verbosity'}       if defined $yaml->{'verbosity'};
+	%initialize = %{ $yaml->{'initialize'} } if defined $yaml->{'initialize'};
+	%data       = %{ $yaml->{'data'} }       if defined $yaml->{'data'};
+	%experiment = %{ $yaml->{'experiment'} } if defined $yaml->{'experiment'};
+}
+
+# process command line arguments
+GetOptions(
+	'verbose+'     => \$verbosity,
+	'outfile=s'    => \$outfile,
+	'initialize=s' => \%initialize,
+	'data=s'       => \%data,
+	'experiment=s' => \%experiment,
+);
+
+# configure logger
+my $log = Algorithm::Genetic::Diploid::Logger->new;
+$log->level( 'level' => $verbosity );
+
+# read input data
+my $traindata = AI::FANN::Evolving::TrainData->new( 'file' => $data{'train'} );
+my $testdata  = AI::FANN::Evolving::TrainData->new( 'file' => $data{'test'}  );
+
+# create the experiment
+my $exp = AI::FANN::Evolving::Experiment->new( 
+	'traindata' => $traindata->to_fann,
+	'env'       => $testdata->to_fann,
+	%experiment,
+);
+
+# initialize the experiment
+$exp->initialize(%initialize);
+
+# run!
+my ( $fittest, $fitness ) = $exp->run();
+$log->info("best fitness: $fitness");
+my ($gene) = sort { $a->fitness <=> $b->fitness } map { $_->genes } $fittest->chromosomes;
+$gene->ann->save($outfile);
