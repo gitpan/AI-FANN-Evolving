@@ -45,14 +45,13 @@ Getter/setter for an L<AI::FANN::Evolving> ANN
 sub ann {
 	my $self = shift;
 	if ( @_ ) {
-		my $ann = shift;
-		my ( $fh, $ann_file ) = tempfile( 'DIR' => $self->experiment->workdir );
-		$ann->save($ann_file);
-		$self->{'ann'} = $ann_file;
-		return $ann;
+		my $ann = shift;	
+		$log->debug("setting ANN $ann");
+		return $self->{'ann'} = $ann;
 	}
-	if ( -e $self->{'ann'} ) {
-		return AI::FANN::Evolving->new( 'file' => $self->{'ann'} );
+	else {
+		$log->debug("getting ANN");
+		return $self->{'ann'};
 	}
 }
 
@@ -66,10 +65,14 @@ value and writes the corresponding ANN to file
 sub make_function {
 	my $self = shift;
 	my $ann = $self->ann;
+	my $error_func = $self->experiment->error_func;
 	$log->debug("making fitness function");
 	
 	# build the fitness function
 	return sub {		
+	
+		# train the AI
+		$ann->train( $self->experiment->traindata );
 	
 		# isa TrainingData object, this is what we need to use
 		# to make our prognostications. It is a different data 
@@ -86,11 +89,14 @@ sub make_function {
 			my ( $input, $expected ) = $env->data($i);
 			my $observed = $ann->run($input);
 			
-			# iterate over the observed and expected values
-			for my $j ( 0 .. $#{ $expected } ) {
-				$fitness += abs( $observed->[$j] - $expected->[$j] );	
-			}
+			use Data::Dumper;
+			$log->debug("Observed: ".Dumper($observed));
+			$log->debug("Expected: ".Dumper($expected));
+			
+			# invoke the error_func provided by the experiment
+			$fitness += $error_func->($observed,$expected);
 		}
+		$fitness /= $env->length;
 		
 		# store result
 		$self->{'fitness'} = $fitness;
@@ -110,6 +116,22 @@ Stores the fitness value after expressing the fitness function
 
 sub fitness { shift->{'fitness'} }
 
+=item clone
+
+Clones the object
+
+=cut
+
+sub clone {
+	my $self = shift;
+	my $ann = delete $self->{'ann'};
+	my $ann_clone = $ann->clone;
+	my $self_clone = $self->SUPER::clone;
+	$self_clone->ann( $ann_clone );
+	$self->ann( $ann );
+	return $self_clone;
+}
+
 =item mutate
 
 Mutates the ANN by stochastically altering its properties in proportion to 
@@ -125,32 +147,12 @@ sub mutate {
 	# probably 0.05
 	my $mu = $self->experiment->mutation_rate;
 
-	# make a clone, which we might mutate further
-	my $ann = $self->ann;
-	my $ann_clone  = $ann->clone;
+	# make a clone, whose untrained ANN properties are mutated
 	my $self_clone = $self->clone;
-	$log->debug("cloned ANN $ann => $ann_clone");
+	my $ann = AI::FANN::Evolving->new( 'ann' => $self->ann );
+	$ann->mutate($mu);
+	$self_clone->ann($ann);
 	
-	# properties of ann we might mutate
-	# XXX equally do this for discrete properties?
-	for my $prop ( AI::FANN::Evolving->continuous_properties ) {
-	
-		# mutate by a value <= $mu
-		my $change = rand($mu);
-		my $propval  = $ann_clone->$prop;
-		$propval = $mu if $propval == 0;
-		my $npropval = $propval + ( $propval * $change - $propval * $mu / 2 );
-		
-		# we don't want the sign to change, e.g. a change from 0.01 to -0.01 might
-		# have unforeseen effects, so flip the sign if we cross zero.
-		$npropval *= -1 if $propval < 0 xor $npropval < 0;
-		$log->debug("going to mutate $prop $propval => $npropval");
-		$ann_clone->$prop( $npropval );
-	}
-	my $data = $self->experiment->traindata;
-	$log->debug("going to re-train using $data");
-	$ann_clone->train( $self->experiment->traindata );
-	$self_clone->ann( $ann_clone );
 	return $self_clone;
 }
 

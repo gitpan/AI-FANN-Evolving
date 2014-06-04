@@ -1,5 +1,6 @@
 package AI::FANN::Evolving::TrainData;
 use strict;
+use List::Util 'shuffle';
 use AI::FANN ':all';
 use Algorithm::Genetic::Diploid::Base;
 use base 'Algorithm::Genetic::Diploid::Base';
@@ -98,7 +99,7 @@ sub predictor_data {
 	}
 	else {
 		my @preds;
-		my $max = $self->{'size'} - 1;
+		my $max = $self->size - 1;
 		for my $j ( 0 .. $max ) {
 			push @preds, $self->predictor_data( 'row' => $j, 'cols' => \@cols);
 		}
@@ -120,8 +121,8 @@ sub dependent_data {
 	}
 	else {
 		my @dep;
-		for $i ( 0 .. $self->{'size'} - 1 ) {
-			push @dep, $self->dependent_data($i);
+		for my $j ( 0 .. $self->size - 1 ) {
+			push @dep, $self->dependent_data($j);
 		}
 		return @dep;
 	}
@@ -135,10 +136,12 @@ Reads provided input file
 
 sub read_data {
 	my ( $self, $file ) = @_; # file is tab-delimited
+	$log->debug("reading data from file $file");
 	open my $fh, '<', $file or die "Can't open $file: $!";
 	my ( %header, @table );
 	while(<$fh>) {
 		chomp;
+		next if /^\s*$/;
 		my @fields = split /\t/, $_;
 		if ( not %header ) {
 			my $i = 0;
@@ -150,7 +153,6 @@ sub read_data {
 	}
 	$self->{'header'} = \%header;
 	$self->{'table'}  = \@table;
-	$self->{'size'}   = scalar @table;
 	return $self;
 }
 
@@ -201,8 +203,29 @@ sub trim_data {
 	}
 	my $num = $self->{'size'} - scalar @trimmed;
 	$log->info("removed $num incomplete rows");
-	$self->{'size'}  = scalar @trimmed;
 	$self->{'table'} = \@trimmed;
+}
+
+=item sample_data
+
+Sample a fraction of the data
+
+=cut
+
+sub sample_data {
+	my $self   = shift;
+	my $sample = shift || 0.5;
+	my $clone1 = $self->clone;
+	my $clone2 = $self->clone;
+	my $size   = $self->size;
+	my @sample;
+	$clone2->{'table'} = \@sample;
+	while( scalar(@sample) < int( $size * $sample ) ) {
+		my @shuffled = shuffle( @{ $clone1->{'table'} } );
+		push @sample, shift @shuffled;
+		$clone1->{'table'} = \@shuffled;
+	}
+	return $clone2, $clone1;
 }
 
 =item partition_data
@@ -258,8 +281,6 @@ sub partition_data {
 	}
 	$clone2->{'table'} = \@new_table;
 	$clone1->{'table'} = \@table;
-	$clone2->{'size'}  = scalar @new_table;
-	$clone1->{'size'}  = scalar @table;
 	return $clone2, $clone1;
 }
 
@@ -269,7 +290,7 @@ Returns the number of data records
 
 =cut
 
-sub size { shift->{'size'} }
+sub size { scalar @{ shift->{'table'} } }
 
 =item to_fann
 
@@ -278,6 +299,7 @@ Packs data into an L<AI::FANN> TrainData structure
 =cut
 
 sub to_fann {
+	$log->debug("encoding data as FANN struct");
 	my $self = shift;
 	my @cols = @_ ? @_ : $self->predictor_columns;
 	my @deps = $self->dependent_data;

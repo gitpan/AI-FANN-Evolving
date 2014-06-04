@@ -19,37 +19,37 @@ AI::FANN::Evolving::Chromosome - chromosome of an evolving, diploid AI
 
 Recombines properties of the AI during meiosis in proportion to the crossover_rate
 
-=back
-
 =cut
 
 sub recombine {
+	$log->debug("recombining chromosomes");
 	# get the genes and columns for the two chromosomes
 	my ( $chr1, $chr2 ) = @_;
 	my ( $gen1 ) = map { $_->mutate } $chr1->genes;
 	my ( $gen2 ) = map { $_->mutate } $chr2->genes;	
 	my ( $ann1, $ann2 ) = ( $gen1->ann, $gen2->ann );
-	my $exp = AI::FANN::Evolving::Experiment->new;
-	
-	# XXX equally do this for discrete properties?
-	for my $prop ( AI::FANN::Evolving->continuous_properties ) {
-	
-		# switch values every time rand() is below crossover
-		my $rate = $exp->crossover_rate;
-		my $val = rand(1);
-		if ( $val <= $rate ) {
-			$log->debug("recombination of $prop");
-			my $prop1 = $ann1->$prop;
-			my $prop2 = $ann2->$prop;
-			$ann1->$prop($prop2);
-			$ann2->$prop($prop1);
-		}
-	}
+	$ann1->recombine($ann2,$chr1->experiment->crossover_rate);
 	
 	# assign the genes to the chromosomes (this because they are clones
 	# so we can't use the old object reference)
 	$chr1->genes($gen1);
 	$chr2->genes($gen2);	
+}
+
+=item clone
+
+Clones the object
+
+=back
+
+=cut
+
+sub clone {
+	my $self = shift;
+	my @genes = $self->genes;
+	my $self_clone = $self->SUPER::clone;
+	$self_clone->genes( map { $_->clone } @genes );
+	return $self_clone;
 }
 
 1;

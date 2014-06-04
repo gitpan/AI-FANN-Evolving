@@ -1,8 +1,3 @@
-examples/bb_test.tsv
-examples/bb_train.tsv
-examples/butterbeetles.tsv
-examples/conf.yml
-examples/fittest.ann
 lib/AI/FANN/Evolving.pm
 lib/AI/FANN/Evolving/Chromosome.pm
 lib/AI/FANN/Evolving/Experiment.pm
@@ -19,6 +14,7 @@ script/aivolver
 t/00-load.t
 t/01-run.t
 t/02-data.t
+t/03-fann-wrapper.t
 t/perl-critic.t
 t/perlcriticrc
 t/pod-coverage.t
